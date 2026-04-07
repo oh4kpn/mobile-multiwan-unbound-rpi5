@@ -23,6 +23,17 @@ In networks with multiple mobile WANs (4G, 5G, Starlink):
 
 ## Technical Architecture
 
+### 0. Monitoring
+
+To verify that queries are being distributed across all WANs:
+Bash
+
+# Check thread distribution and cache hits
+unbound-control stats_noreset | grep thread
+
+# Live traffic monitor to see outgoing source IPs
+sudo tcpdump -i any port 53 -n
+
 ### 1. Network Layer (Linux MACVLAN)
 Instead of a single IP, the gateway uses virtual MACVLAN interfaces. This allows a single physical NIC to present multiple MAC addresses to the upstream router (e.g., UniFi Gateway), enabling Policy-Based Routing (PBR) per virtual interface.
 
