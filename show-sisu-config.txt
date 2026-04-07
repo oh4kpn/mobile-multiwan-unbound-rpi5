@@ -1,0 +1,193 @@
+--- SISU MULTI-WAN DNS CONFIGURATION EXPORT ---
+Generated on: Tue  7 Apr 12:29:15 EEST 2026
+
+## 1. Systemd-Networkd: Physical Interface (eth0)
+FILE: /etc/systemd/network/10-static-eth0.network
+[Match]
+Name=eth0
+
+[Link]
+MACAddress=ba:be:be:ba:ba:03
+
+[Network]
+Address=10.120.1.3/24
+Gateway=10.120.1.1
+DNS=127.0.0.1
+DHCP=no
+IPv6AcceptRA=no
+MACVLAN=mac-dna
+MACVLAN=mac-elisa
+MACVLAN=mac-telia
+
+## 2. Systemd-Networkd: MACVLAN Devices (.netdev)
+FILE: /etc/systemd/network/20-dna.netdev
+[NetDev]
+Name=mac-dna
+Kind=macvlan
+MACAddress=ba:be:be:ba:ba:40
+BindCarrier=eth0
+[MACVLAN]
+Mode=bridge
+
+FILE: /etc/systemd/network/22-elisa.netdev
+[NetDev]
+Name=mac-elisa
+Kind=macvlan
+MACAddress=ba:be:be:be:ba:41
+BindCarrier=eth0
+[MACVLAN]
+Mode=bridge
+
+FILE: /etc/systemd/network/24-telia.netdev
+[NetDev]
+Name=mac-telia
+Kind=macvlan
+MACAddress=ba:be:be:ba:ba:42
+BindCarrier=eth0
+[MACVLAN]
+Mode=bridge
+
+## 3. Systemd-Networkd: Virtual Interfaces (.network)
+FILE: /etc/systemd/network/21-dna.network
+[Match]
+Name=mac-dna
+[Network]
+Address=10.120.1.40/24
+#Gateway=10.120.1.1
+DHCP=no
+IPv6AcceptRA=no
+[DHCPv4]
+Hostname=sisu-dna
+[RoutingPolicyRule]
+From=10.120.1.40
+Table=100
+
+[Route]
+Destination=0.0.0.0/0
+Gateway=10.120.1.1
+Table=100
+
+FILE: /etc/systemd/network/23-elisa.network
+[Match]
+Name=mac-elisa
+[Network]
+Address=10.120.1.41/24
+#Gateway=10.120.1.1
+DHCP=no
+IPv6AcceptRA=no
+[DHCPv4]
+Hostname=sisu-elisa
+[RoutingPolicyRule]
+From=10.120.1.41
+Table=101
+
+[Route]
+Destination=0.0.0.0/0
+Gateway=10.120.1.1
+Table=101
+
+FILE: /etc/systemd/network/25-telia.network
+[Match]
+Name=mac-telia
+[Network]
+Address=10.120.1.42/24
+#Gateway=10.120.1.1
+DHCP=no
+IPv6AcceptRA=no
+[DHCPv4]
+Hostname=sisu-telia
+[RoutingPolicyRule]
+From=10.120.1.42
+Table=102
+
+[Route]
+Destination=0.0.0.0/0
+Gateway=10.120.1.1
+Table=102
+
+## 4. Routing Tables (Custom Rules)
+Routing rules (ip rule):
+32763:	from 10.120.1.41 lookup 101 proto static
+32764:	from 10.120.1.42 lookup 102 proto static
+32765:	from 10.120.1.40 lookup 100 proto static
+
+## 5. Unbound Configuration
+FILE: /etc/unbound/unbound.conf
+server:
+    # --- VERKKO JA RAJAPINNAT ---
+    # Pakotetaan DNS-kyselyt lähtemään vain virtuaalikorttien kautta
+    # outgoing-interface: 10.120.1.3
+    outgoing-interface: 10.120.1.40
+    outgoing-interface: 10.120.1.41
+    outgoing-interface: 10.120.1.42
+    
+    interface: 0.0.0.0
+    access-control: 10.0.0.0/8 allow
+    access-control: 192.168.0.0/16 allow
+    access-control: 127.0.0.0/8 allow
+
+    # --- NOPEUDEN OPTIMOINTI (WAN-KILPAILUTUS) ---
+    # Unbound seuraa vastauksia ja suosii nopeinta reittiä.
+    # Lyhennetään TTL:ää, jotta hitaat reitit unohdetaan nopeammin:
+    infra-host-ttl: 60
+    
+    # Haetaan kohteita aktiivisesti rinnakkain:
+    target-fetch-policy: "3 2 1 0 0"
+    
+    # Jos vastaus kestää yli 375ms, kokeillaan toista operaattoria heti:
+    unknown-server-time-limit: 375
+
+    # --- SÄIKEISTYS JA VÄLIMUISTI (RPI5 OPTIMOITU) ---
+    num-threads: 2
+    msg-cache-size: 128m
+    rrset-cache-size: 256m
+    
+    # Slabs-arvot pitää olla num-threads kerrannaisia (esim. 4)
+    msg-cache-slabs: 4
+    rrset-cache-slabs: 4
+    infra-cache-slabs: 4
+    key-cache-slabs: 4
+
+    
+    # --- VÄLIMUISTIN AGGRESSIIVISUUS ---
+    prefetch: yes
+    prefetch-key: yes
+    serve-expired: yes
+    
+    # 72 tuntia sekunteina (60 * 60 * 72 = 259200)
+    serve-expired-ttl: 259200
+    
+    # Vastataan vanhentuneella tiedolla välittömästi, jos haku kestää
+    # (Tämä nopeuttaa vastausta, kun uutta tietoa haetaan taustalla)
+    serve-expired-reply-ttl: 30
+
+    # Puskurit suuremmalle kuormalle
+    so-rcvbuf: 4m
+    so-sndbuf: 4m
+
+    # --- TURVALLISUUS JA REKURSIO ---
+    root-hints: "/etc/unbound/root.hints"
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    use-caps-for-id: yes
+    edns-buffer-size: 1232
+
+remote-control:
+    control-enable: yes
+    control-interface: 127.0.0.1
+    control-port: 8953
+
+## 6. Live Status Check
+Interface Status:
+IDX LINK      TYPE     OPERATIONAL SETUP     
+  1 lo        loopback carrier     unmanaged
+  2 eth0      ether    routable    configured
+  3 wlan0     wlan     off         unmanaged
+  4 mac-dna   ether    routable    configured
+  5 mac-telia ether    routable    configured
+  6 mac-elisa ether    routable    configured
+
+6 links listed.
+
+Multi-WAN Connectivity Test:
+IP 10.120.1.40 -> 178.x.x.x IP 10.120.1.41 -> 84.x.x.x IP 10.120.1.42 -> 93.x.x.x
